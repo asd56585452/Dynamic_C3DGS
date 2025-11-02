@@ -1,1 +1,6 @@
 .DS_Store
+/datasets
+/__pycache__
+/script/__pycache__
+/thirdparty/colmap/__pycache__
+/log

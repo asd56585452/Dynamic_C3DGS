@@ -172,7 +172,7 @@ if __name__ == "__main__" :
  
     parser.add_argument("--videopath", default="", type=str)
     parser.add_argument("--startframe", default=0, type=int)
-    parser.add_argument("--endframe", default=50, type=int)
+    parser.add_argument("--endframe", default=60, type=int)
 
     args = parser.parse_args()
     videopath = args.videopath
