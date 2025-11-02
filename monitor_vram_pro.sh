@@ -2,7 +2,7 @@
 
 # --- 設定 ---
 # 監控間隔（秒）
-INTERVAL=1
+INTERVAL=10
 # 紀錄 VRAM 使用量的日誌檔案名稱
 LOG_FILE="vram_usage.log"
 

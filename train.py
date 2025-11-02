@@ -33,6 +33,7 @@ import torchvision
 import numpy as np 
 import torch.nn.functional as F
 import cv2
+from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 
 
@@ -129,6 +130,8 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
     validdepthdict = {}
     emsstartfromiterations = opt.emsstart   
 
+    scaler = GradScaler()
+
     with torch.no_grad():
         timeindex = 0 # 0 to 49
         viewpointset = traincamdict[timeindex]
@@ -176,30 +179,32 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
             camindex = random.sample(viewpointset, opt.batch)
 
             for i in range(opt.batch):
-                viewpoint_cam = camindex[i]
-                render_pkg = render(viewpoint_cam, gaussians, pipe, background,  override_color=None,  basicfunction=rbfbasefunction, GRsetting=GRsetting, GRzer=GRzer, rvq_iter=(iteration > opt.rvq_iter))
-                image, viewspace_point_tensor, visibility_filter, radii = getrenderparts(render_pkg) 
-                gt_image = viewpoint_cam.original_image.float().cuda()
-                
-                if opt.reg == 2:
-                    Ll1 = l2_loss(image, gt_image)
-                    loss = Ll1
-                elif opt.reg == 3:
-                    Ll1 = rel_loss(image, gt_image)
-                    loss = Ll1
-                else:
-                    Ll1 = l1_loss(image, gt_image)
-                    loss = getloss(opt, Ll1, ssim, image, gt_image, gaussians, radii)
+                with autocast():
+                    viewpoint_cam = camindex[i]
+                    render_pkg = render(viewpoint_cam, gaussians, pipe, background,  override_color=None,  basicfunction=rbfbasefunction, GRsetting=GRsetting, GRzer=GRzer, rvq_iter=(iteration > opt.rvq_iter))
+                    image, viewspace_point_tensor, visibility_filter, radii = getrenderparts(render_pkg) 
+                    gt_image = viewpoint_cam.original_image.float().cuda()
+                    
+                    if opt.reg == 2:
+                        Ll1 = l2_loss(image, gt_image)
+                        loss = Ll1
+                    elif opt.reg == 3:
+                        Ll1 = rel_loss(image, gt_image)
+                        loss = Ll1
+                    else:
+                        Ll1 = l1_loss(image, gt_image)
+                        loss = getloss(opt, Ll1, ssim, image, gt_image, gaussians, radii)
 
-                if ours:
-                    loss += opt.lambda_mask*torch.mean((torch.sigmoid(gaussians._mask)))
+                    if ours:
+                        loss += opt.lambda_mask*torch.mean((torch.sigmoid(gaussians._mask)))
 
-                if flagems == 1:
-                    if viewpoint_cam.image_name not in lossdiect:
-                        lossdiect[viewpoint_cam.image_name] = loss.item()
-                        ssimdict[viewpoint_cam.image_name] = ssim(image.clone().detach(), gt_image.clone().detach()).item()
+                    if flagems == 1:
+                        if viewpoint_cam.image_name not in lossdiect:
+                            lossdiect[viewpoint_cam.image_name] = loss.item()
+                            ssimdict[viewpoint_cam.image_name] = ssim(image.clone().detach(), gt_image.clone().detach()).item()
                 
-                loss.backward()
+                # loss.backward()
+                scaler.scale(loss).backward()
                 gaussians.cache_gradient()
                 gaussians.optimizer.zero_grad(set_to_none = True)# 
 
@@ -391,12 +396,15 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
                 
             # Optimizer step
             if iteration < opt.iterations:
-                gaussians.optimizer.step()        
+                # gaussians.optimizer.step()  
+                scaler.step(gaussians.optimizer)      
                 gaussians.optimizer.zero_grad(set_to_none = True)
                 if ours:
-                    gaussians.optimizer_net.step()
+                    # gaussians.optimizer_net.step()
+                    scaler.step(gaussians.optimizer_net)
                     gaussians.scheduler_net.step()
                     gaussians.optimizer_net.zero_grad(set_to_none = True)
+                scaler.update()
 
 
 
