@@ -24,7 +24,7 @@ class Scene:
 
     # gaussians : GaussianModel
 
-    def __init__(self, args : ModelParams, gaussians, load_iteration=None, shuffle=True, resolution_scales=[1.0], multiview=False,duration=50.0, loader="colmap"):
+    def __init__(self, args : ModelParams, gaussians, load_iteration=None, shuffle=True, resolution_scales=[1.0], multiview=False,duration=50.0, loader="colmap",igs_init=False):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -47,7 +47,7 @@ class Scene:
 
 
         if loader == "colmap" or loader == "colmapvalid": # colmapvalid only for testing
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, multiview, duration=duration)
+            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, multiview, duration=duration, igs_init=igs_init)
         
         elif loader == "technicolor" or loader == "technicolorvalid" :
             scene_info = sceneLoadTypeCallbacks["Technicolor"](args.source_path, args.images, args.eval, multiview, duration=duration)
@@ -158,8 +158,8 @@ class Scene:
             self.gaussians.save_npz(os.path.join(point_cloud_path, "point_cloud"))
             if compress:
                 self.gaussians.save_npz_pp(os.path.join(point_cloud_path, "point_cloud"))
-        else:
-            self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+        # else:
+        self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
     
     # recordpointshelper(model_path, numpoints, iteration, string):
     def recordpoints(self, iteration, string):

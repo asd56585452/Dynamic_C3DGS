@@ -53,6 +53,7 @@ def getparser():
     parser.add_argument("--configpath", type=str, default = "None")
     parser.add_argument("--comp", action="store_true")
     parser.add_argument("--store_npz", action="store_true")
+    parser.add_argument("--igs_init", action="store_true")
 
     args = parser.parse_args(sys.argv[1:])
     
@@ -112,7 +113,10 @@ def gettestparse():
     parser.add_argument("--configpath", type=str, default = "1")
 
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--igs_init", action="store_true")
+    
     args = get_combined_args(parser)
+    print("Parsing test args", args.igs_init)
     print("Rendering " + args.model_path)
     # configpath
     safe_state(args.quiet)

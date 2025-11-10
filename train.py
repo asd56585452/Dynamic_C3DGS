@@ -45,7 +45,7 @@ from argparse import Namespace
 from thirdparty.gaussian_splatting.helper3dg import getparser, getrenderparts
 
 
-def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration=50, rgbfunction="rgbv1", rdpip="v2", comp=False, store_npz=False):
+def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration=50, rgbfunction="rgbv1", rdpip="v2", comp=False, store_npz=False,igs_init=False):
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
 
@@ -68,7 +68,7 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
 
 
     rbfbasefunction = trbfunction
-    scene = Scene(dataset, gaussians, duration=duration, loader=dataset.loader)
+    scene = Scene(dataset, gaussians, duration=duration, loader=dataset.loader,igs_init=igs_init)
     
 
     currentxyz = gaussians._xyz 
@@ -402,9 +402,8 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
 
 if __name__ == "__main__":
     
-
     args, lp_extract, op_extract, pp_extract = getparser()
-    train(lp_extract, op_extract, pp_extract, args.save_iterations, args.debug_from, densify=args.densify, duration=args.duration, rgbfunction=args.rgbfunction, rdpip=args.rdpip, comp=args.comp, store_npz=args.store_npz)
+    train(lp_extract, op_extract, pp_extract, args.save_iterations, args.debug_from, densify=args.densify, duration=args.duration, rgbfunction=args.rgbfunction, rdpip=args.rdpip, comp=args.comp, store_npz=args.store_npz,igs_init=args.igs_init)
 
     # All done
     print("\nTraining complete.")

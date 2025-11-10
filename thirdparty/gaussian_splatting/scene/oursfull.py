@@ -496,6 +496,130 @@ class GaussianModel:
         model_fname = path.replace(".ply", ".pt")
         print(f'Saving model checkpoint to: {model_fname}')
         torch.save(self.rgbdecoder.state_dict(), model_fname)
+    
+    def save_ply_by_timestamp(self, path, timestamp, basicfunction):
+        """
+        Saves a 3D Gaussian Splatting snapshot (.ply) of the 4D model at a specific timestamp.
+        Assumes the model has already been pruned (e.g., final_prune has been called),
+        so the mask parameter is no longer applied.
+        
+        Args:
+            path (str): The file path to save the .ply file.
+            timestamp (float): The timestamp to capture the 3D snapshot at.
+            basicfunction (callable): The temporal basis function (e.g., from train.py) 
+                                      used to compute trbfoutput.
+        """
+        mkdir_p(os.path.dirname(path))
+        print(f"Saving 3DGS snapshot at timestamp {timestamp} to {path} (post-prune logic)...")
+
+        # --- 1. Get tensors on the correct device ---
+        device = self._xyz.device
+        
+        # --- 2. Compute time delta (tforpoly) ---
+        # Logic from __init__.py:test_ours_full()
+        pointtimes = torch.ones((self.get_xyz.shape[0], 1), dtype=self._xyz.dtype, device=device)
+        trbfcenter = self.get_trbfcenter
+        trbfdistanceoffset = timestamp * pointtimes - trbfcenter
+        tforpoly = trbfdistanceoffset.detach()
+
+        # --- 3. Compute time-modulated opacity (trbfoutput) ---
+        # Logic from __init__.py:test_ours_full()
+        trbfscale_param = self.get_trbfscale 
+        trbfscale_activated = torch.exp(trbfscale_param)
+        trbfdistance = trbfdistanceoffset / trbfscale_activated
+        trbfoutput = basicfunction(trbfdistance)
+
+        with torch.no_grad():
+            # --- 4. Compute geometry at timestamp 't' ---
+            
+            # XYZ
+            xyz_base = self.get_xyz
+            t = tforpoly
+            t2 = t * t
+            t3 = t2 * t
+            motion = self._motion
+            # Final XYZ position at timestamp 't'
+            xyz_at_t = xyz_base + motion[:, 0:3] * t + motion[:, 3:6] * t2 + motion[:, 6:9] * t3
+            
+            # Rotation
+            rotation_base = self._rotation
+            omega = self._omega
+            # Final rotation parameter at timestamp 't'
+            # rotation_param_at_t = rotation_base + tforpoly * omega
+            rotation_param_at_t = self.get_rotation(0, rotation_base, omega)
+
+            # Scaling (No mask applied, matching test_ours_full)
+            scales_activated = self.get_scaling 
+            scales_param_at_t = self.scaling_inverse_activation(scales_activated)
+
+            # Opacity (No mask applied, matching test_ours_full)
+            # test_ours_full uses pc._opacity directly, 
+            # which post-prune might be the activated value.
+            # Using get_opacity * trbfoutput is the safer, correct equivalent.
+            base_opacity = self._opacity # self.opacity_activation(self._opacity)
+            opacity_final_activated = base_opacity * trbfoutput
+            
+            # Clamp to avoid inf/-inf from inverse_sigmoid
+            opacity_clamped = torch.clamp(opacity_final_activated, 1e-6, 1.0 - 1e-6)
+            opacities_param_at_t = self.inverse_opacity_activation(opacity_clamped)
+
+            # --- 5. Compute features at timestamp 't' ---
+            
+            # Features are based on the *base* position (for grid lookup)
+            # xyz_contracted = self.contract_to_unisphere(self.get_xyz, torch.tensor([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], device=device))
+            # colors_base = self.mlp_head(self.recolor(xyz_contracted)).float()
+            
+            # Now compute the time-modulated features
+            # test_ours_full uses pc._features_dc, but this logic computes the base color
+            # from the hash grid, which is more aligned with the model's design.
+            # Then we add the time features as in test_ours_full
+            # features_at_t = torch.cat((self._features_dc, tforpoly * self._features_t), dim=1)
+            features_at_t = self.get_features(self._features_dc, self._features_t, tforpoly)
+            
+            # --- 6. Prepare attributes for PLY saving ---
+            
+            xyz = xyz_at_t.detach().cpu().numpy()
+            normals = np.zeros_like(xyz)
+            
+            f_dc = features_at_t[:, :3].detach().contiguous().cpu().numpy()
+            f_rest = features_at_t[:, 3:].detach().contiguous().cpu().numpy()
+            
+            opacities = opacities_param_at_t.detach().cpu().numpy()
+            scale = scales_param_at_t.detach().cpu().numpy()
+            rotation = rotation_param_at_t.detach().cpu().numpy()
+
+            # --- 7. Construct PLY attributes list ---
+            # This list mimics gaussian_model.py
+            l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
+            
+            assert f_dc.shape[1] == 3
+            for i in range(f_dc.shape[1]):
+                l.append(f'f_dc_{i}')
+                
+            assert f_rest.shape[1] == 6
+            for i in range(f_rest.shape[1]):
+                l.append(f'f_rest_{i}')
+                
+            l.append('opacity')
+            
+            assert scale.shape[1] == 3
+            for i in range(scale.shape[1]):
+                l.append(f'scale_{i}')
+                
+            assert rotation.shape[1] == 4
+            for i in range(rotation.shape[1]):
+                l.append(f'rot_{i}')
+
+            dtype_full = [(attribute, 'f4') for attribute in l]
+
+            # --- 8. Combine attributes and save ---
+            elements = np.empty(xyz.shape[0], dtype=dtype_full)
+            attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+            elements[:] = list(map(tuple, attributes))
+            el = PlyElement.describe(elements, 'vertex')
+            PlyData([el]).write(path)
+            
+            print(f"Successfully saved 3DGS snapshot to {path}")
 
     def post_quant(self, param, prune=False):
         max_val = torch.amax(param)

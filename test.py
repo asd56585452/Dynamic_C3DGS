@@ -61,9 +61,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     render, GRsetting, GRzer = getrenderpip(rdpip) 
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
+    gs_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gs")
 
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
+    makedirs(gs_path, exist_ok=True)
     if gaussians.rgbdecoder is not None:
         gaussians.rgbdecoder.cuda()
         gaussians.rgbdecoder.eval()
@@ -141,6 +143,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+        gaussians.save_ply_by_timestamp(os.path.join(gs_path, '{0:05d}'.format(idx) + ".ply"), timestamp=view.timestamp,basicfunction=rbfbasefunction)
         image_names.append('{0:05d}'.format(idx) + ".png")
 
     
@@ -198,7 +201,7 @@ def render_setnogt(model_path, name, iteration, views, gaussians, pipeline, back
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
 
 
-def run_test(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, multiview : bool, duration: int, rgbfunction="rgbv1", rdpip="v2", loader="colmap"):
+def run_test(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, multiview : bool, duration: int, rgbfunction="rgbv1", rdpip="v2", loader="colmap", igs_init=False):
     
     with torch.no_grad():
         print("use model {}".format(dataset.model))
@@ -206,7 +209,7 @@ def run_test(dataset : ModelParams, iteration : int, pipeline : PipelineParams, 
 
         gaussians = GaussianModel(dataset, rgbfunction)
 
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, multiview=multiview, duration=duration, loader=loader)
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, multiview=multiview, duration=duration, loader=loader, igs_init=igs_init)
         rbfbasefunction = trbfunction
         numchannels = 9
         bg_color =  [0 for _ in range(numchannels)]
@@ -226,4 +229,4 @@ if __name__ == "__main__":
     
 
     args, model_extract, pp_extract, multiview =gettestparse()
-    run_test(model_extract, args.test_iteration, pp_extract, args.skip_train, args.skip_test, multiview, args.duration,  rgbfunction=args.rgbfunction, rdpip=args.rdpip, loader=args.valloader)
+    run_test(model_extract, args.test_iteration, pp_extract, args.skip_train, args.skip_test, multiview, args.duration,  rgbfunction=args.rgbfunction, rdpip=args.rdpip, loader=args.valloader, igs_init=args.igs_init)
