@@ -158,6 +158,10 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
+    def create_from_igs(self, pcd : BasicPointCloud, spatial_lr_scale : float):
+        #未完成 用create_from_pcd代替
+        return self.create_from_pcd(pcd, spatial_lr_scale)
+
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
 
         if self.preprocesspoints == 3:

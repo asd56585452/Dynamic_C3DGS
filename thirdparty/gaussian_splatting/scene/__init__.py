@@ -148,6 +148,8 @@ class Scene:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud"))
+        elif igs_init:
+            self.gaussians.create_from_igs(scene_info.igs_point_cloud, self.cameras_extent)
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
