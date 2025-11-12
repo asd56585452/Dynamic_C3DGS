@@ -26,6 +26,8 @@ import glob
 import natsort
 from simple_knn._C import distCUDA2
 import torch
+from tqdm import tqdm
+from typing import NamedTuple, Union
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -47,7 +49,7 @@ class CameraInfo(NamedTuple):
     cyr: float
 
 class SceneInfo(NamedTuple):
-    point_cloud: BasicPointCloud
+    point_cloud: Union[BasicPointCloud, dict]
     train_cameras: list
     test_cameras: list
     nerf_normalization: dict
@@ -814,37 +816,49 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, multiview=False, duratio
     txt_path = os.path.join(path, "sparse/0/points3D.txt")
     totalply_path = os.path.join(path, "sparse/0/points3D_total" + str(duration) + ".ply")
     
+    if not os.path.exists(totalply_path):
+        print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
+        totalxyz = []
+        totalrgb = []
+        totaltime = []
+        for i in range(starttime, starttime + duration):
+            thisbin_path = os.path.join(path, "sparse/0/points3D.bin").replace("colmap_"+ str(starttime), "colmap_" + str(i), 1)
+            xyz, rgb, _ = read_points3D_binary(thisbin_path)
+            totalxyz.append(xyz)
+            totalrgb.append(rgb)
+            totaltime.append(np.ones((xyz.shape[0], 1)) * (i-starttime) / duration)
+        xyz = np.concatenate(totalxyz, axis=0)
+        rgb = np.concatenate(totalrgb, axis=0)
+        totaltime = np.concatenate(totaltime, axis=0)
+        assert xyz.shape[0] == rgb.shape[0]  
+        xyzt =np.concatenate( (xyz, totaltime), axis=1)     
+        storePly(totalply_path, xyzt, rgb)
     if not igs_init:
-        if not os.path.exists(totalply_path):
-            print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
-            totalxyz = []
-            totalrgb = []
-            totaltime = []
-            for i in range(starttime, starttime + duration):
-                thisbin_path = os.path.join(path, "sparse/0/points3D.bin").replace("colmap_"+ str(starttime), "colmap_" + str(i), 1)
-                xyz, rgb, _ = read_points3D_binary(thisbin_path)
-                totalxyz.append(xyz)
-                totalrgb.append(rgb)
-                totaltime.append(np.ones((xyz.shape[0], 1)) * (i-starttime) / duration)
-            xyz = np.concatenate(totalxyz, axis=0)
-            rgb = np.concatenate(totalrgb, axis=0)
-            totaltime = np.concatenate(totaltime, axis=0)
-            assert xyz.shape[0] == rgb.shape[0]  
-            xyzt =np.concatenate( (xyz, totaltime), axis=1)     
-            storePly(totalply_path, xyzt, rgb)
         try:
             pcd = fetchPly(totalply_path)
         except:
             pcd = None
-
-        scene_info = SceneInfo(point_cloud=pcd,
-                            train_cameras=train_cam_infos,
-                            test_cameras=test_cam_infos,
-                            nerf_normalization=nerf_normalization,
-                            ply_path=totalply_path)
-        return scene_info
+        point_cloud_data = pcd
     else:
-        return None
+        # --- 新的 IGS INIT 擬合邏輯 ---
+        print("[IGS Init] Bypassing COLMAP point cloud, starting IGS fitting...")
+        # 調用我們新加入的輔助函式
+        # 我們假設 'path' (source_path) 是根目錄
+        igs_fitted_data = _fit_igs_model_from_ply_sequence(path, starttime, duration)
+        
+        # 將擬合的字典放入 SceneInfo.point_cloud
+        # Scene.__init__ 將會接收這個字典並傳遞給 create_from_igs
+        point_cloud_data = igs_fitted_data
+    
+
+
+    scene_info = SceneInfo(point_cloud=point_cloud_data,
+                        train_cameras=train_cam_infos,
+                        test_cameras=test_cam_infos,
+                        nerf_normalization=nerf_normalization,
+                        ply_path=totalply_path)
+    
+    return scene_info
 
 
 
@@ -1190,6 +1204,108 @@ def readColmapCamerasImmersivev2(cam_extrinsics, cam_intrinsics, images_folder, 
             cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos
+
+def _fit_igs_model_from_ply_sequence(path, starttime, duration):
+    """
+    Loads a sequence of IGS PLY files and fits them to the 4D model parameters
+    using linear least squares.
+    NOTE: Color features (f_dc, f_rest) are NOT fitted due to model incompatibility.
+    They must be learned from scratch by the oursfull.py model's TCNN.
+    """
+    print(f"[IGS Init] Starting to fit 4D model from PLY sequence (Geometry Only)...")
+    ply_dir = os.path.join(path, "igs_plys") 
+    
+    K = duration
+    timestamps = np.arange(starttime, starttime + duration)
+    timestamps_normalized = (timestamps - starttime) / float(duration)
+    
+    # K: 幀數, N: 點數
+    first_ply_path = os.path.join(ply_dir, f"{starttime}.ply")
+    if not os.path.exists(first_ply_path):
+        raise ValueError(f"[IGS Init] Error: First PLY file not found at {first_ply_path}")
+    first_plydata = PlyData.read(first_ply_path)['vertex']
+    N = len(first_plydata['x']) # 獲取點的總數 N
+    
+    print(f"[IGS Init] Found {N} points. Loading {K} PLY files...")
+    
+    # 初始化 (N, K, D) 陣列
+    all_xyz = np.empty((N, K, 3), dtype=np.float32)
+    all_rot = np.empty((N, K, 4), dtype=np.float32)
+    all_scale = np.empty((N, K, 3), dtype=np.float32)
+    all_opacity = np.empty((N, K, 1), dtype=np.float32)
+
+    loaded_count = 0
+    for k_idx, i in enumerate(tqdm(range(starttime, starttime + duration), desc="Loading IGS PLYs")):
+        ply_path = os.path.join(ply_dir, f"{i}.ply")
+        if not os.path.exists(ply_path):
+            print(f"Warning: Missing PLY file {ply_path}, skipping...")
+            if k_idx > 0: # 用前一幀的數據填充
+                all_xyz[:, k_idx, :] = all_xyz[:, k_idx - 1, :]
+                all_rot[:, k_idx, :] = all_rot[:, k_idx - 1, :]
+                all_scale[:, k_idx, :] = all_scale[:, k_idx - 1, :]
+                all_opacity[:, k_idx, :] = all_opacity[:, k_idx - 1, :]
+            continue
+            
+        plydata = PlyData.read(ply_path)['vertex']
+        
+        if len(plydata['x']) != N:
+            raise ValueError(f"[IGS Init] Error: Point count mismatch in {ply_path}. Expected {N}, got {len(plydata['x'])}")
+
+        all_xyz[:, k_idx, :] = np.vstack([plydata['x'], plydata['y'], plydata['z']]).T
+        all_rot[:, k_idx, :] = np.vstack([plydata['rot_0'], plydata['rot_1'], plydata['rot_2'], plydata['rot_3']]).T
+        all_scale[:, k_idx, :] = np.vstack([plydata['scale_0'], plydata['scale_1'], plydata['scale_2']]).T
+        all_opacity[:, k_idx, :] = np.vstack([plydata['opacity']]).T
+        loaded_count += 1
+
+    if loaded_count == 0:
+        raise ValueError("[IGS Init] No PLY files were successfully loaded.")
+
+    print(f"[IGS Init] Loaded {N} points across {loaded_count} timestamps. Fitting parameters...")
+
+    # 準備時間矩陣 (A in Ax=b)
+    t = timestamps_normalized.reshape(-1, 1) # Shape (K, 1)
+    A_pos = np.hstack([np.ones_like(t), t, t**2, t**3]) # (K, 4) for Position
+    A_rot = np.hstack([np.ones_like(t), t]) # (K, 2) for Rotation
+
+    # 初始化擬合參數的陣列
+    fit_xyz = np.empty((N, 3), dtype=np.float32)
+    fit_motion = np.empty((N, 9), dtype=np.float32)
+    fit_rot = np.empty((N, 4), dtype=np.float32)
+    fit_omega = np.empty((N, 4), dtype=np.float32)
+
+    for i in tqdm(range(N), desc="Fitting 4D Parameters"):
+        # 1. 擬合位置 (_xyz, _motion)
+        params_pos, _, _, _ = np.linalg.lstsq(A_pos, all_xyz[i], rcond=None)
+        fit_xyz[i] = params_pos[0]
+        fit_motion[i] = params_pos[1:].flatten()
+
+        # 2. 擬合旋轉 (_rotation, _omega)
+        params_rot, _, _, _ = np.linalg.lstsq(A_rot, all_rot[i], rcond=None)
+        fit_rot[i] = params_rot[0]
+        fit_omega[i] = params_rot[1]
+
+    # 3. 平均縮放 (_scaling)
+    fit_scale = np.mean(all_scale, axis=1)
+
+    # 4. 平均不透明度 (_opacity)
+    fit_opacity = np.mean(all_opacity, axis=1)
+
+    # 打包結果
+    igs_data = {
+        "xyz": fit_xyz,
+        "motion": fit_motion,
+        "rotation": fit_rot,
+        "omega": fit_omega,
+        "scaling": fit_scale,
+        "opacity": fit_opacity,
+        # 強制恆定不透明度
+        "trbf_center": np.full((N, 1), 0.5, dtype=np.float32),
+        "trbf_scale": np.full((N, 1), 20.0, dtype=np.float32),
+        # _features_t 將在 create_from_igs 中被初始化為 0
+    }
+    
+    print("[IGS Init] Fitting complete.")
+    return igs_data
     
 sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,

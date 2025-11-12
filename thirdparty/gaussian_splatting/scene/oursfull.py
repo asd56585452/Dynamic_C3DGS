@@ -158,9 +158,61 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_igs(self, pcd : BasicPointCloud, spatial_lr_scale : float):
-        #未完成 用create_from_pcd代替
-        return self.create_from_pcd(pcd, spatial_lr_scale)
+    def create_from_igs(self, igs_data : dict, spatial_lr_scale : float):
+        """
+        Initializes the GaussianModel from pre-fitted IGS data.
+        'igs_data' is a dictionary containing numpy arrays for all required parameters.
+        Color features (_features_t) are initialized to zero and must be learned.
+        """
+        print("Creating GaussianModel from fitted IGS data...")
+        self.spatial_lr_scale = spatial_lr_scale
+        
+        # --- Convert numpy arrays from igs_data dict to torch Parameters ---
+        
+        fused_point_cloud = torch.tensor(igs_data["xyz"]).float().cuda()
+        self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
+
+        self._motion = nn.Parameter(torch.tensor(igs_data["motion"]).float().cuda().requires_grad_(True))
+        self._rotation = nn.Parameter(torch.tensor(igs_data["rotation"]).float().cuda().requires_grad_(True))
+        self._omega = nn.Parameter(torch.tensor(igs_data["omega"]).float().cuda().requires_grad_(True))
+        
+        self._scaling = nn.Parameter(torch.tensor(igs_data["scaling"]).float().cuda().requires_grad_(True))
+        self._opacity = nn.Parameter(torch.tensor(igs_data["opacity"]).float().cuda().requires_grad_(True))
+
+        # TRBF parameters are set to force constant opacity
+        self._trbf_center = nn.Parameter(torch.tensor(igs_data["trbf_center"]).float().cuda().requires_grad_(True))
+        self._trbf_scale = nn.Parameter(torch.tensor(igs_data["trbf_scale"]).float().cuda().requires_grad_(True))
+        
+        # --- Initialize other required attributes ---
+        num_points = fused_point_cloud.shape[0]
+        print("Number of points at initialisation : ", num_points)
+
+        # --- MANUALLY INITIALIZE _features_t TO ZERO ---
+        # (This is the same logic as in create_from_pcd)
+        fomega = torch.zeros((num_points, 3), dtype=torch.float, device="cuda")
+        self._features_t =  nn.Parameter(fomega.contiguous().requires_grad_(True))
+        nn.init.constant_(self._features_t, 0)
+        # ---
+
+        self._mask = nn.Parameter(torch.ones((num_points, 1), device="cuda").requires_grad_(True))
+        self.max_radii2D = torch.zeros((num_points), device="cuda")
+        self.xyz_gradient_accum = torch.zeros((num_points, 1), device="cuda")
+        self.denom = torch.zeros((num_points, 1), device="cuda")
+
+        # --- Set scene bounds from fitted base XYZ ---
+        self.maxz, self.minz = torch.amax(self._xyz[:,2]), torch.amin(self._xyz[:,2]) 
+        self.maxy, self.miny = torch.amax(self._xyz[:,1]), torch.amin(self._xyz[:,1]) 
+        self.maxx, self.minx = torch.amax(self._xyz[:,0]), torch.amin(self._xyz[:,0]) 
+        self.maxz = min((self.maxz, 200.0))
+
+        # Initialize gradient cache for rgbdecoder
+        self.rgb_grd = {}
+        for name, W in self.rgbdecoder.named_parameters():
+            if 'weight' in name:
+                self.rgb_grd[name] = torch.zeros_like(W, requires_grad=False).cuda()
+            elif 'bias' in name:
+                print('not implemented for IGS init bias')
+                pass
 
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float):
 
@@ -586,7 +638,7 @@ class GaussianModel:
             normals = np.zeros_like(xyz)
             
             f_dc = features_at_t[:, :3].detach().contiguous().cpu().numpy()
-            f_rest = features_at_t[:, 3:].detach().contiguous().cpu().numpy()
+            # f_rest = features_at_t[:, 3:].detach().contiguous().cpu().numpy()
             
             opacities = opacities_param_at_t.detach().cpu().numpy()
             scale = scales_param_at_t.detach().cpu().numpy()
@@ -600,9 +652,9 @@ class GaussianModel:
             for i in range(f_dc.shape[1]):
                 l.append(f'f_dc_{i}')
                 
-            assert f_rest.shape[1] == 6
-            for i in range(f_rest.shape[1]):
-                l.append(f'f_rest_{i}')
+            # assert f_rest.shape[1] == 6
+            # for i in range(f_rest.shape[1]):
+            #     l.append(f'f_rest_{i}')
                 
             l.append('opacity')
             
@@ -618,7 +670,7 @@ class GaussianModel:
 
             # --- 8. Combine attributes and save ---
             elements = np.empty(xyz.shape[0], dtype=dtype_full)
-            attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation), axis=1)
+            attributes = np.concatenate((xyz, normals, f_dc, opacities, scale, rotation), axis=1)
             elements[:] = list(map(tuple, attributes))
             el = PlyElement.describe(elements, 'vertex')
             PlyData([el]).write(path)
@@ -630,9 +682,14 @@ class GaussianModel:
         min_val = torch.amin(param)
         if prune:
             param = param*(torch.abs(param) > 0.1)
-        param = (param - min_val)/(max_val - min_val)
-        quant = torch.round(param * 255.0)
-        out = (max_val - min_val)*quant/255.0 + min_val
+        denominator = max_val - min_val
+        if denominator < 1e-6:
+            param_normalized = torch.zeros_like(param)
+        else:
+            param_normalized = (param - min_val) / denominator
+        quant = torch.round(param_normalized * 255.0)
+        out = (max_val - min_val) * quant / 255.0 + min_val
+        
         return torch.nn.Parameter(out), quant, torch.tensor([min_val, max_val])
     
     def huffman_encode(self, param):
