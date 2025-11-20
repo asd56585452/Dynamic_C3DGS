@@ -54,6 +54,7 @@ def getparser():
     parser.add_argument("--comp", action="store_true")
     parser.add_argument("--store_npz", action="store_true")
     parser.add_argument("--igs_init", action="store_true")
+    parser.add_argument('--first_iter', type=int, default=0)
 
     args = parser.parse_args(sys.argv[1:])
     
