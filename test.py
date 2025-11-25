@@ -201,7 +201,7 @@ def render_setnogt(model_path, name, iteration, views, gaussians, pipeline, back
         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
 
 
-def run_test(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, multiview : bool, duration: int, rgbfunction="rgbv1", rdpip="v2", loader="colmap", igs_init=False):
+def run_test(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, multiview : bool, duration: int, rgbfunction="rgbv1", rdpip="v2", loader="colmap", igs_init=False, igs_init_mode="default"):
     
     with torch.no_grad():
         print("use model {}".format(dataset.model))
@@ -209,7 +209,7 @@ def run_test(dataset : ModelParams, iteration : int, pipeline : PipelineParams, 
 
         gaussians = GaussianModel(dataset, rgbfunction)
 
-        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, multiview=multiview, duration=duration, loader=loader, igs_init=igs_init)
+        scene = Scene(dataset, gaussians, load_iteration=iteration, shuffle=False, multiview=multiview, duration=duration, loader=loader, igs_init=igs_init, igs_init_mode=igs_init_mode)
         rbfbasefunction = trbfunction
         numchannels = 9
         bg_color =  [0 for _ in range(numchannels)]
@@ -229,4 +229,4 @@ if __name__ == "__main__":
     
 
     args, model_extract, pp_extract, multiview =gettestparse()
-    run_test(model_extract, args.test_iteration, pp_extract, args.skip_train, args.skip_test, multiview, args.duration,  rgbfunction=args.rgbfunction, rdpip=args.rdpip, loader=args.valloader, igs_init=args.igs_init)
+    run_test(model_extract, args.test_iteration, pp_extract, args.skip_train, args.skip_test, multiview, args.duration,  rgbfunction=args.rgbfunction, rdpip=args.rdpip, loader=args.valloader, igs_init=args.igs_init, igs_init_mode=args.igs_init_mode)

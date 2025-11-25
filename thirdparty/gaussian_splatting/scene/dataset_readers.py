@@ -763,7 +763,7 @@ def readColmapSceneInfoMv(path, images, eval, llffhold=8, multiview=False, durat
 
 
 
-def readColmapSceneInfo(path, images, eval, llffhold=8, multiview=False, duration=50, igs_init = False):
+def readColmapSceneInfo(path, images, eval, llffhold=8, multiview=False, duration=50, igs_init = False, igs_init_mode="default"):
     try:
         cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
         cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
@@ -844,7 +844,10 @@ def readColmapSceneInfo(path, images, eval, llffhold=8, multiview=False, duratio
         print("[IGS Init] Bypassing COLMAP point cloud, starting IGS fitting...")
         # 調用我們新加入的輔助函式
         # 我們假設 'path' (source_path) 是根目錄
-        igs_fitted_data = _fit_igs_model_from_ply_sequence(path, starttime, duration)
+        if igs_init_mode == "default":
+            igs_fitted_data = _fit_igs_model_from_ply_sequence(path, starttime, duration, igs_init_mode=igs_init_mode)
+        elif igs_init_mode == "nomotion":
+            igs_fitted_data = _fit_igs_model_from_ply_sequence(path, starttime, duration, igs_init_mode=igs_init_mode)
         
         # 將擬合的字典放入 SceneInfo.point_cloud
         # Scene.__init__ 將會接收這個字典並傳遞給 create_from_igs
@@ -1205,7 +1208,7 @@ def readColmapCamerasImmersivev2(cam_extrinsics, cam_intrinsics, images_folder, 
     sys.stdout.write('\n')
     return cam_infos
 
-def _fit_igs_model_from_ply_sequence(path, starttime, duration):
+def _fit_igs_model_from_ply_sequence(path, starttime, duration, igs_init_mode="default"):
     """
     Loads a sequence of IGS PLY files and fits them to the 4D model parameters
     using linear least squares.
@@ -1225,6 +1228,30 @@ def _fit_igs_model_from_ply_sequence(path, starttime, duration):
         raise ValueError(f"[IGS Init] Error: First PLY file not found at {first_ply_path}")
     first_plydata = PlyData.read(first_ply_path)['vertex']
     N = len(first_plydata['x']) # 獲取點的總數 N
+
+    if igs_init_mode == "nomotion":
+        print(f"[IGS Init] Mode: nomotion. Using only the first frame (frame {starttime}) for initialization.")
+        
+        fit_xyz = np.vstack([first_plydata['x'], first_plydata['y'], first_plydata['z']]).T.astype(np.float32)
+        fit_rot = np.vstack([first_plydata['rot_0'], first_plydata['rot_1'], first_plydata['rot_2'], first_plydata['rot_3']]).T.astype(np.float32)
+        fit_scale = np.vstack([first_plydata['scale_0'], first_plydata['scale_1'], first_plydata['scale_2']]).T.astype(np.float32)
+        fit_opacity = np.vstack([first_plydata['opacity']]).T.astype(np.float32)
+        
+        fit_motion = np.zeros((N, 9), dtype=np.float32)
+        fit_omega = np.zeros((N, 4), dtype=np.float32)
+        
+        igs_data = {
+            "xyz": fit_xyz,
+            "motion": fit_motion,
+            "rotation": fit_rot,
+            "omega": fit_omega,
+            "scaling": fit_scale,
+            "opacity": fit_opacity,
+            "trbf_center": np.full((N, 1), 0.5, dtype=np.float32),
+            "trbf_scale": np.full((N, 1), 20.0, dtype=np.float32),
+        }
+        print("[IGS Init] nomotion initialization complete.")
+        return igs_data
     
     print(f"[IGS Init] Found {N} points. Loading {K} PLY files...")
     

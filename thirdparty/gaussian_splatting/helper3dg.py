@@ -54,6 +54,7 @@ def getparser():
     parser.add_argument("--comp", action="store_true")
     parser.add_argument("--store_npz", action="store_true")
     parser.add_argument("--igs_init", action="store_true")
+    parser.add_argument("--igs_init_mode", type=str, default = "default")
     parser.add_argument('--first_iter', type=int, default=0)
 
     args = parser.parse_args(sys.argv[1:])
@@ -115,6 +116,7 @@ def gettestparse():
 
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--igs_init", action="store_true")
+    parser.add_argument("--igs_init_mode", type=str, default = "default")
     
     args = get_combined_args(parser)
     print("Parsing test args", args.igs_init)

@@ -158,13 +158,13 @@ class GaussianModel:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    def create_from_igs(self, igs_data : dict, spatial_lr_scale : float):
+    def create_from_igs(self, igs_data : dict, spatial_lr_scale : float, igs_init_mode="default"):
         """
         Initializes the GaussianModel from pre-fitted IGS data.
         'igs_data' is a dictionary containing numpy arrays for all required parameters.
         Color features (_features_t) are initialized to zero and must be learned.
         """
-        print("Creating GaussianModel from fitted IGS data...")
+        print("Creating GaussianModel from fitted IGS data... Mode:", igs_init_mode)
         self.spatial_lr_scale = spatial_lr_scale
         
         # --- Convert numpy arrays from igs_data dict to torch Parameters ---

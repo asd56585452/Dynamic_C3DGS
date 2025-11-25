@@ -24,7 +24,7 @@ class Scene:
 
     # gaussians : GaussianModel
 
-    def __init__(self, args : ModelParams, gaussians, load_iteration=None, shuffle=True, resolution_scales=[1.0], multiview=False,duration=50.0, loader="colmap",igs_init=False):
+    def __init__(self, args : ModelParams, gaussians, load_iteration=None, shuffle=True, resolution_scales=[1.0], multiview=False,duration=50.0, loader="colmap",igs_init=False, igs_init_mode="default"):
         """b
         :param path: Path to colmap scene main folder.
         """
@@ -47,7 +47,7 @@ class Scene:
 
 
         if loader == "colmap" or loader == "colmapvalid": # colmapvalid only for testing
-            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, multiview, duration=duration, igs_init=igs_init)
+            scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval, multiview, duration=duration, igs_init=igs_init, igs_init_mode=igs_init_mode)
         
         elif loader == "technicolor" or loader == "technicolorvalid" :
             scene_info = sceneLoadTypeCallbacks["Technicolor"](args.source_path, args.images, args.eval, multiview, duration=duration)
@@ -149,7 +149,7 @@ class Scene:
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud"))
         elif igs_init:
-            self.gaussians.create_from_igs(scene_info.point_cloud, self.cameras_extent)
+            self.gaussians.create_from_igs(scene_info.point_cloud, self.cameras_extent, igs_init_mode=igs_init_mode)
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
