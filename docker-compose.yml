@@ -1,0 +1,39 @@
+services:
+  dynamic_c3dgs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: asdggg/dynamic_c3dgs:latest
+    user: "${UID}:${GID}"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TQDM_MININTERVAL=10
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_QPA_PLATFORM=offscreen
+      - TORCH_CUDA_ARCH_LIST=8.6;8.9;12.0
+      - TCNN_CUDA_ARCHITECTURES=86;89;120
+    ports:
+      - "6006:6006"
+      - "8080-8090:8080-8090"
+    volumes:
+      - .:/workspace
+      - /home/tsaichenghan/Dynamic_C3DGS:/home/tsaichenghan/Dynamic_C3DGS
+      - /media/tsaichenghan/HardDisk:/media/tsaichenghan/HardDisk
+      - /media/tsaichenghan/2TBSSD:/media/tsaichenghan/2TBSSD
+      - /home/tsaichenghan/GSCodec_Studio:/home/tsaichenghan/GSCodec_Studio
+      - ./cache:/root/.cache
+      - ./cache:/home/ubuntu/.cache
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    working_dir: /workspace
+    command: /bin/bash
+    shm_size: '8gb'
+    ipc: host
+    deploy:
+      resources:
+        limits:
+          memory: 26G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]

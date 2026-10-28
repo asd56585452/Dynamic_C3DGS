@@ -1,1 +1,11 @@
 .DS_Store
+*.so
+*.pyc
+__pycache__/
+*.egg-info/
+build/
+dist/
+cache/
+output/
+datasets/
+thirdparty/mmcv/

@@ -1,0 +1,17 @@
+.git
+.gitignore
+.gitmodules
+cache/
+output/
+datasets/
+results/
+*.ply
+*.zip
+*.tar
+*.log
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+thirdparty/mmcv/
