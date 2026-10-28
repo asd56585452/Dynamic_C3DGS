@@ -12,9 +12,7 @@ USER_UID=$(id -u)
 USER_GID=$(id -g)
 
 if [ $# -eq 0 ]; then
-    CMD="bash"
+    env UID=$USER_UID GID=$USER_GID docker compose run --rm dynamic_c3dgs bash
 else
-    CMD="$@"
+    env UID=$USER_UID GID=$USER_GID docker compose run --rm dynamic_c3dgs "$@"
 fi
-
-env UID=$USER_UID GID=$USER_GID docker compose run --rm dynamic_c3dgs $CMD
