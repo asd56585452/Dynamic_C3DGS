@@ -246,6 +246,10 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration, compress=comp, store=store_npz)
 
+            if iteration == opt.iterations:
+                print("Training complete.")
+                break
+
 
 
 

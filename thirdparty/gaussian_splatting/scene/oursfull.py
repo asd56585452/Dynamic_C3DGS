@@ -502,9 +502,13 @@ class GaussianModel:
         min_val = torch.amin(param)
         if prune:
             param = param*(torch.abs(param) > 0.1)
-        param = (param - min_val)/(max_val - min_val)
-        quant = torch.round(param * 255.0)
-        out = (max_val - min_val)*quant/255.0 + min_val
+        denominator = max_val - min_val
+        if denominator < 1e-6:
+            param_normalized = torch.zeros_like(param)
+        else:
+            param_normalized = (param - min_val) / denominator
+        quant = torch.round(param_normalized * 255.0)
+        out = (max_val - min_val) * quant / 255.0 + min_val
         return torch.nn.Parameter(out), quant, torch.tensor([min_val, max_val])
     
     def huffman_encode(self, param):
