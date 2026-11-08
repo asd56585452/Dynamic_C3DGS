@@ -47,6 +47,7 @@ import warnings
 import json 
 
 from thirdparty.gaussian_splatting.lpipsPyTorch import lpips
+from thirdparty.gaussian_splatting.lpipsPyTorch.modules.lpips import LPIPS
 from helper_train import getrenderpip, getmodel, trbfunction
 from thirdparty.gaussian_splatting.utils.loss_utils import ssim
 from thirdparty.gaussian_splatting.utils.image_utils import psnr
@@ -93,6 +94,9 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     psnrs = []
     lpipss = []
     lpipssvggs = []
+    lpips_alex_norm = []
+    lpips_vgg_norm = []
+    lpips_nets = {n: LPIPS(n, '0.1').cuda().eval() for n in ('alex', 'vgg')}
 
     full_dict = {}
     per_view_dict = {}
@@ -129,6 +133,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         psnrs.append(psnr(rendering.unsqueeze(0), gt.unsqueeze(0)))
         lpipss.append(lpips(rendering.unsqueeze(0), gt.unsqueeze(0), net_type='alex')) #
         lpipssvggs.append( lpips(rendering.unsqueeze(0), gt.unsqueeze(0), net_type='vgg'))
+        # Benchmark protocol: LPIPS expects inputs in [-1, 1] (its z-score layer is calibrated for that range).
+        with torch.no_grad():
+            r11, g11 = rendering.unsqueeze(0) * 2 - 1, gt.unsqueeze(0) * 2 - 1
+            lpips_alex_norm.append(lpips_nets['alex'](r11, g11).item())
+            lpips_vgg_norm.append(lpips_nets['vgg'](r11, g11).item())
 
         rendernumpy = rendering.permute(1,2,0).detach().cpu().numpy()
         gtnumpy = gt.permute(1,2,0).detach().cpu().numpy()
@@ -166,13 +175,17 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
                                         "LPIPS": torch.tensor(lpipss).mean().item(),
                                         "ssimsv2": torch.tensor(ssimsv2).mean().item(),
                                         "LPIPSVGG": torch.tensor(lpipssvggs).mean().item(),
+                                        "LPIPS_ALEX_NORM": float(np.mean(lpips_alex_norm)),
+                                        "LPIPS_VGG_NORM": float(np.mean(lpips_vgg_norm)),
                                         "times": torch.tensor(times).mean().item()})
         
         per_view_dict[model_path][iteration].update({"SSIM": {name: ssim for ssim, name in zip(torch.tensor(ssims).tolist(), image_names)},
                                                                 "PSNR": {name: psnr for psnr, name in zip(torch.tensor(psnrs).tolist(), image_names)},
                                                                 "LPIPS": {name: lp for lp, name in zip(torch.tensor(lpipss).tolist(), image_names)},
                                                                 "ssimsv2": {name: v for v, name in zip(torch.tensor(ssimsv2).tolist(), image_names)},
-                                                                "LPIPSVGG": {name: lpipssvgg for lpipssvgg, name in zip(torch.tensor(lpipssvggs).tolist(), image_names)},})
+                                                                "LPIPSVGG": {name: lpipssvgg for lpipssvgg, name in zip(torch.tensor(lpipssvggs).tolist(), image_names)},
+                                                                "LPIPS_ALEX_NORM": dict(zip(image_names, lpips_alex_norm)),
+                                                                "LPIPS_VGG_NORM": dict(zip(image_names, lpips_vgg_norm)),})
         
             
             
