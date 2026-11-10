@@ -9,3 +9,13 @@ cache/
 output/
 datasets/
 thirdparty/mmcv/
+
+# Symlinks to SSD (no trailing slash so symlinks match too)
+/datasets
+/output
+# Archived to /media/tsaichenghan/2TBSSD/Dynamic_C3DGS/metrics_csv_old_20261101
+/metrics_csv
+# Benchmark skill kept outside version control (shared across method repos)
+/.agents
+# Personal editor settings
+*.code-workspace

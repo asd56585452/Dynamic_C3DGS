@@ -498,21 +498,28 @@ class GaussianModel:
         torch.save(self.rgbdecoder.state_dict(), model_fname)
 
     def post_quant(self, param, prune=False):
+        param = torch.nan_to_num(param, nan=0.0, posinf=0.0, neginf=0.0)
         max_val = torch.amax(param)
         min_val = torch.amin(param)
         if prune:
             param = param*(torch.abs(param) > 0.1)
         denominator = max_val - min_val
-        if denominator < 1e-6:
+        if torch.isnan(denominator) or denominator < 1e-6:
             param_normalized = torch.zeros_like(param)
         else:
             param_normalized = (param - min_val) / denominator
+        param_normalized = torch.nan_to_num(param_normalized, nan=0.0)
         quant = torch.round(param_normalized * 255.0)
         out = (max_val - min_val) * quant / 255.0 + min_val
         return torch.nn.Parameter(out), quant, torch.tensor([min_val, max_val])
     
     def huffman_encode(self, param):
-        input_code_list = param.view(-1).tolist()
+        if torch.is_tensor(param):
+            param = torch.nan_to_num(param, nan=0.0)
+            raw_list = param.view(-1).tolist()
+        else:
+            raw_list = list(param)
+        input_code_list = [0.0 if (isinstance(x, (float, np.floating)) and np.isnan(x)) else x for x in raw_list]
         unique, counts = np.unique(input_code_list, return_counts=True)
         num_freq = dict(zip(unique, counts))
 
@@ -523,7 +530,7 @@ class GaussianModel:
             sym_bit_dict[k] = v[0]
         total_bits = 0
         for num, freq in num_freq.items():
-            total_bits += freq * sym_bit_dict[num]
+            total_bits += freq * sym_bit_dict.get(num, 8)
         total_mb = total_bits/8/10**6
         
         return total_mb, codec.encode(input_code_list), codec.get_code_table()
@@ -1013,6 +1020,8 @@ class GaussianModel:
         mb_str = "Storage\nposition: "+str(position_mb)+"\nmotion: "+str(motion_mb)+"\nscale: "+str(scale_mb)+"\nrotation: "+str(rotation_mb)+"\nomega: "+str(omega_mb)+"\ntime_feature: "+str(tfea_mb)+"\nopacity: "+str(opacity_mb)+"\ntime_center: "+str(tcen_mb)+"\ntime_scale: "+str(tsca_mb)+"\nhash: "+str(hash_mb)+"\nmlp: "+str(mlp_mb)+"\ntotal: "+str(sum_mb)+" MB"
         
         if compress:
+            if hasattr(self.recolor, "params") and self.recolor.params is not None:
+                self.recolor.params.data = torch.nan_to_num(self.recolor.params.data, nan=0.0, posinf=0.0, neginf=0.0)
             _, self.quant_opa, self.minmax_opa = self.post_quant(self.get_opacity)
             _, self.quant_tcen, self.minmax_tcen = self.post_quant(self._trbf_center)
             _, self.quant_tsca, self.minmax_tsca = self.post_quant(self._trbf_scale)

@@ -28,10 +28,12 @@ services:
     command: /bin/bash
     shm_size: '8gb'
     ipc: host
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     deploy:
       resources:
-        limits:
-          memory: 26G
         reservations:
           devices:
             - driver: nvidia

@@ -37,30 +37,31 @@ from thirdparty.gaussian_splatting.helper3dg import getcolmapsinglen3d
 
 
 
-def extractframes(videopath):
+def extractframes(videopath, endframe=300):
+    save_dir = videopath.replace(".mp4", "")
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Check if all frames from 0 to endframe - 1 exist
+    missing_any = False
+    for i in range(endframe):
+        if not os.path.exists(os.path.join(save_dir, f"{i}.png")):
+            missing_any = True
+            break
+
+    if not missing_any:
+        print(f"already extracted {endframe} frames, skip extracting")
+        return
+
     cam = cv2.VideoCapture(videopath)
     ctr = 0
-    sucess = True
-    for i in range(300):
-        if os.path.exists(os.path.join(videopath.replace(".mp4", ""), str(i) + ".png")):
-            ctr += 1
-    if ctr == 300 or ctr == 150: # 150 for 04_truck 
-        print("already extracted all the frames, skip extracting")
-        return
-    ctr = 0
-    while ctr < 300:
-        try:
-            _, frame = cam.read()
-
-            savepath = os.path.join(videopath.replace(".mp4", ""), str(ctr) + ".png")
-            if not os.path.exists(videopath.replace(".mp4", "")) :
-                os.makedirs(videopath.replace(".mp4", ""))
-
+    while ctr < endframe:
+        ret, frame = cam.read()
+        if not ret:
+            break
+        savepath = os.path.join(save_dir, f"{ctr}.png")
+        if not os.path.exists(savepath):
             cv2.imwrite(savepath, frame)
-            ctr += 1 
-        except:
-            sucess = False
-            print("error")
+        ctr += 1
     cam.release()
     return
 
@@ -197,10 +198,10 @@ if __name__ == "__main__" :
     
     
     ##### step1
-    print("start extracting 300 frames from videos")
+    print(f"start extracting {endframe} frames from videos")
     videoslist = glob.glob(videopath + "*.mp4")
     for v in tqdm.tqdm(videoslist):
-        extractframes(v)
+        extractframes(v, endframe)
 
     
 

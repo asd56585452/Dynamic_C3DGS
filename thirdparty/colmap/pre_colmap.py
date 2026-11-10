@@ -92,17 +92,16 @@ def pair_id_to_image_ids(pair_id):
 
 
 def array_to_blob(array):
-    if IS_PYTHON3:
+    if hasattr(array, "tobytes"):
+        return array.tobytes()
+    elif hasattr(array, "tostring"):
         return array.tostring()
     else:
         return np.getbuffer(array)
 
 
 def blob_to_array(blob, dtype, shape=(-1,)):
-    if IS_PYTHON3:
-        return np.fromstring(blob, dtype=dtype).reshape(*shape)
-    else:
-        return np.frombuffer(blob, dtype=dtype).reshape(*shape)
+    return np.frombuffer(blob, dtype=dtype).reshape(*shape)
 
 
 class COLMAPDatabase(sqlite3.Connection):

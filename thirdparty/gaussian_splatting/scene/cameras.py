@@ -44,10 +44,7 @@ class Camera(nn.Module):
 
         # image is real image 
         if not isinstance(image, tuple):
-            if "camera_" not in image_name:
-                self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
-            else:
-                self.original_image = image.clamp(0.0, 1.0).half().to(self.data_device)
+            self.original_image = image.clamp(0.0, 1.0).half().to(self.data_device)
             self.image_width = self.original_image.shape[2]
             self.image_height = self.original_image.shape[1]
             if gt_alpha_mask is not None:
@@ -80,8 +77,8 @@ class Camera(nn.Module):
 
 
         if rayd is not None:
-            projectinverse = self.projection_matrix.T.inverse()
-            camera2wold = self.world_view_transform.T.inverse()
+            projectinverse = self.projection_matrix.T.inverse().double()
+            camera2wold = self.world_view_transform.T.inverse().double()
             pixgrid = create_meshgrid(self.image_height, self.image_width, normalized_coordinates=False, device="cpu")[0]
             pixgrid = pixgrid.cuda()  # H,W,
             
@@ -93,17 +90,17 @@ class Camera(nn.Module):
             ndcx = ndcx.unsqueeze(-1)
             ndcy = ndcy.unsqueeze(-1)# * (-1.0)
             
-            ndccamera = torch.cat((ndcx, ndcy,   torch.ones_like(ndcy) * (1.0) , torch.ones_like(ndcy)), 2) # N,4 
+            ndccamera = torch.cat((ndcx, ndcy,   torch.ones_like(ndcy) * (1.0) , torch.ones_like(ndcy)), 2).double() # N,4 
 
             projected = ndccamera @ projectinverse.T 
             diretioninlocal = projected / projected[:,:,3:] #v 
 
 
             direction = diretioninlocal[:,:,:3] @ camera2wold[:3,:3].T 
-            rays_d = torch.nn.functional.normalize(direction, p=2.0, dim=-1)
+            rays_d = torch.nn.functional.normalize(direction, p=2.0, dim=-1).float()
 
             
-            self.rayo = self.camera_center.expand(rays_d.shape).permute(2, 0, 1).unsqueeze(0)                                     #rayo.permute(2, 0, 1).unsqueeze(0)
+            self.rayo = self.camera_center.expand(rays_d.shape).permute(2, 0, 1).unsqueeze(0).float()                                     #rayo.permute(2, 0, 1).unsqueeze(0)
             self.rayd = rays_d.permute(2, 0, 1).unsqueeze(0)    
             
 
@@ -153,11 +150,7 @@ class Camerass(nn.Module):
 
         # image is real image 
         if not isinstance(image, tuple):
-            if "camera_" not in image_name:
-                self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
-            else:
-                self.original_image = image.clamp(0.0, 1.0).half().to(self.data_device)
-            print("read one")# lazy loader?
+            self.original_image = image.clamp(0.0, 1.0).half().to(self.data_device)
             self.image_width = self.original_image.shape[2]
             self.image_height = self.original_image.shape[1]
 
@@ -187,8 +180,8 @@ class Camerass(nn.Module):
 
 
         if rayd is not None:
-            projectinverse = self.projection_matrix.T.inverse()
-            camera2wold = self.world_view_transform.T.inverse()
+            projectinverse = self.projection_matrix.T.inverse().double()
+            camera2wold = self.world_view_transform.T.inverse().double()
             pixgrid = create_meshgrid(self.image_height, self.image_width, normalized_coordinates=False, device="cpu")[0]
             pixgrid = pixgrid.cuda()  # H,W,
             
@@ -200,16 +193,16 @@ class Camerass(nn.Module):
             ndcx = ndcx.unsqueeze(-1)
             ndcy = ndcy.unsqueeze(-1)# * (-1.0)
             
-            ndccamera = torch.cat((ndcx, ndcy,   torch.ones_like(ndcy) * (1.0) , torch.ones_like(ndcy)), 2) # N,4 
+            ndccamera = torch.cat((ndcx, ndcy,   torch.ones_like(ndcy) * (1.0) , torch.ones_like(ndcy)), 2).double() # N,4 
 
             projected = ndccamera @ projectinverse.T 
             diretioninlocal = projected / projected[:,:,3:] # 
 
             direction = diretioninlocal[:,:,:3] @ camera2wold[:3,:3].T 
-            rays_d = torch.nn.functional.normalize(direction, p=2.0, dim=-1)
+            rays_d = torch.nn.functional.normalize(direction, p=2.0, dim=-1).float()
 
             
-            self.rayo = self.camera_center.expand(rays_d.shape).permute(2, 0, 1).unsqueeze(0)                                     #rayo.permute(2, 0, 1).unsqueeze(0)
+            self.rayo = self.camera_center.expand(rays_d.shape).permute(2, 0, 1).unsqueeze(0).float()                                     #rayo.permute(2, 0, 1).unsqueeze(0)
             self.rayd = rays_d.permute(2, 0, 1).unsqueeze(0)                                                                          #rayd.permute(2, 0, 1).unsqueeze(0)
         else :
             self.rayo = None

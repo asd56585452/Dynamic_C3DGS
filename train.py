@@ -100,6 +100,10 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
     ema_loss_for_log = 0.0
     #if freeze != 1:
     first_iter = 0
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.synchronize()
+    pure_train_start_time = time.perf_counter()
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
 
@@ -247,6 +251,15 @@ def train(dataset, opt, pipe, saving_iterations, debug_from, densify=0, duration
                 scene.save(iteration, compress=comp, store=store_npz)
 
             if iteration == opt.iterations:
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                pure_train_time = time.perf_counter() - pure_train_start_time
+                peak_vram_gb = torch.cuda.max_memory_allocated() / (1024 ** 3) if torch.cuda.is_available() else 0.0
+                with open(os.path.join(args.model_path, "total_time.txt"), "w") as tf:
+                    tf.write(f"{pure_train_time:.4f}\n")
+                with open(os.path.join(args.model_path, "vram_peak.txt"), "w") as vf:
+                    vf.write(f"{peak_vram_gb:.4f}\n")
+                print(f"\n[BENCHMARK] Pure Reconstruction Time: {pure_train_time:.2f} s | Peak VRAM: {peak_vram_gb:.2f} GB")
                 print("Training complete.")
                 break
 
